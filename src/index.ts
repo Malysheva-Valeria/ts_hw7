@@ -1,125 +1,199 @@
-import { TaskStatus, TaskPriority } from "./models.js";
-import { isTask } from "./utils.js";
-import { TaskManager, TaskNotFoundError } from "./manager.js";
+import { EventManager } from './services/manager.js';
+import { TaskNotFoundError } from './models/models.js';
+import { formatEvent, isMeetingEvent, isTaskEvent, isReminderEvent } from './utils/utils.js';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const hr = (label: string) =>
+  console.log(`\n${'═'.repeat(60)}\n  ${label}\n${'═'.repeat(60)}`);
 
-const DIVIDER = "─".repeat(60);
+// ─── Bootstrap ────────────────────────────────────────────────────────────────
 
-function section(title: string): void {
-  console.log(`\n${DIVIDER}`);
-  console.log(`  ${title}`);
-  console.log(DIVIDER);
-}
+const manager = new EventManager();
 
-function printTask(task: unknown): void {
-  if (!isTask(task)) {
-    console.log("  [invalid task object]");
-    return;
-  }
-  console.log(`  [#${task.id}] ${task.title}`);
-  console.log(`        Status   : ${task.status}`);
-  console.log(`        Priority : ${task.priority}`);
-  console.log(`        Created  : ${task.createdAt.toISOString()}`);
-  if (task.completedAt) {
-    console.log(`        Completed: ${task.completedAt.toISOString()}`);
-  }
-  console.log(`        Desc     : ${task.description}`);
-}
+// ─── 1. SEED — 9 diverse events ───────────────────────────────────────────────
 
-// ─── Seed Data ────────────────────────────────────────────────────────────────
+hr('SEED DATA — adding 9 events');
 
-const manager = new TaskManager();
-
-const seeds = [
-  { title: "Set up CI/CD pipeline",         description: "Configure GitHub Actions for automated builds.",       status: TaskStatus.Completed,  priority: TaskPriority.High   },
-  { title: "Design database schema",         description: "Draft ERD for the new user module.",                   status: TaskStatus.Completed,  priority: TaskPriority.High   },
-  { title: "Implement authentication",       description: "Add JWT-based login and registration endpoints.",      status: TaskStatus.InProgress, priority: TaskPriority.High   },
-  { title: "Write unit tests for auth",      description: "Achieve ≥ 90 % coverage on the auth service.",         status: TaskStatus.Todo,       priority: TaskPriority.Medium },
-  { title: "Build dashboard UI",             description: "Create the main analytics dashboard with charts.",     status: TaskStatus.InProgress, priority: TaskPriority.Medium },
-  { title: "Optimize database queries",      description: "Profile slow queries and add missing indexes.",        status: TaskStatus.Todo,       priority: TaskPriority.Low    },
-  { title: "Update API documentation",       description: "Sync Swagger docs with the latest endpoint changes.",  status: TaskStatus.Todo,       priority: TaskPriority.Low    },
-  { title: "Migrate legacy data",            description: "Run ETL scripts to move records from the old system.", status: TaskStatus.Canceled,   priority: TaskPriority.Medium },
-] as const;
-
-for (const seed of seeds) {
-  manager.add({ ...seed });
-}
-
-// ─── Demo: Show all seeded tasks ──────────────────────────────────────────────
-
-section("ALL SEEDED TASKS (8 items)");
-manager.getAll().forEach(printTask);
-
-// ─── Demo: Add a new task ─────────────────────────────────────────────────────
-
-section("ADD: New task → 'Deploy to staging'");
-const newTask = manager.add({
-  title:       "Deploy to staging",
-  description: "Push the latest release candidate to the staging environment.",
-  status:      TaskStatus.Todo,
-  priority:    TaskPriority.High,
+manager.add<import('./models/models.js').MeetingEvent>({
+  type: 'meeting',
+  title: 'Sprint Planning',
+  location: 'Conference Room A',
+  participants: ['Alice', 'Bob', 'Charlie'],
+  startTime: new Date('2026-04-20T10:00:00'),
 });
-printTask(newTask);
-console.log(`\n  Total tasks now: ${manager.getAll().length}`);
 
-// ─── Demo: Update status → InProgress ────────────────────────────────────────
+manager.add<import('./models/models.js').MeetingEvent>({
+  type: 'meeting',
+  title: 'Design Review',
+  location: 'Zoom #design-weekly',
+  participants: ['Diana', 'Eve'],
+  startTime: new Date('2026-04-21T14:00:00'),
+});
 
-section("UPDATE: #9 status → InProgress");
-const inProgress = manager.update(newTask.id, { status: TaskStatus.InProgress });
-printTask(inProgress);
+manager.add<import('./models/models.js').MeetingEvent>({
+  type: 'meeting',
+  title: 'Stakeholder Demo',
+  location: 'Main Hall',
+  participants: ['Frank', 'Grace', 'Heidi', 'Ivan'],
+  startTime: new Date('2026-04-25T09:00:00'),
+});
 
-// ─── Demo: Update status → Completed (sets completedAt) ──────────────────────
+manager.add<import('./models/models.js').TaskEvent>({
+  type: 'task',
+  title: 'Fix login bug',
+  dueDate: new Date('2026-04-17T18:00:00'),
+  tags: ['bug', 'auth', 'critical'],
+  completed: false,
+});
 
-section("UPDATE: #9 status → Completed  (completedAt auto-set)");
-const completed = manager.update(newTask.id, { status: TaskStatus.Completed });
-printTask(completed);
+manager.add<import('./models/models.js').TaskEvent>({
+  type: 'task',
+  title: 'Write API docs',
+  dueDate: new Date('2026-04-22T12:00:00'),
+  tags: ['docs', 'api'],
+  completed: false,
+});
 
-// ─── Demo: Delete a task ──────────────────────────────────────────────────────
+manager.add<import('./models/models.js').TaskEvent>({
+  type: 'task',
+  title: 'Migrate database schema',
+  dueDate: new Date('2026-04-30T09:00:00'),
+  tags: ['db', 'migration', 'backend'],
+  completed: false,
+});
 
-section("DELETE: task #7 ('Update API documentation')");
-manager.delete(7);
-console.log("  Task #7 deleted successfully.");
-console.log(`  Total tasks now: ${manager.getAll().length}`);
+manager.add<import('./models/models.js').ReminderEvent>({
+  type: 'reminder',
+  message: 'Submit quarterly report',
+  notifyBefore: 60,
+  triggerAt: new Date('2026-04-18T09:00:00'),
+});
 
-// ─── Demo: Filter by Status ───────────────────────────────────────────────────
+manager.add<import('./models/models.js').ReminderEvent>({
+  type: 'reminder',
+  message: 'Team lunch reservation',
+  notifyBefore: 30,
+  triggerAt: new Date('2026-04-19T12:00:00'),
+});
 
-section("FILTER: status = Todo");
-manager.filterByStatus(TaskStatus.Todo).forEach(printTask);
+manager.add<import('./models/models.js').ReminderEvent>({
+  type: 'reminder',
+  message: 'Renew SSL certificate',
+  notifyBefore: 1440, // 24 hours
+  triggerAt: new Date('2026-05-01T00:00:00'),
+});
 
-section("FILTER: status = Completed");
-manager.filterByStatus(TaskStatus.Completed).forEach(printTask);
+console.log(`Total events seeded: ${manager.count}`);
 
-// ─── Demo: Filter by Priority ─────────────────────────────────────────────────
+// ─── 2. READ ALL ──────────────────────────────────────────────────────────────
 
-section("FILTER: priority = High");
-manager.filterByPriority(TaskPriority.High).forEach(printTask);
+hr('ALL EVENTS (console.table)');
+console.table(manager.getAll().map(formatEvent));
 
-// ─── Demo: Combined filter (status + priority) ────────────────────────────────
+// ─── 3. TYPED QUERIES ─────────────────────────────────────────────────────────
 
-section("FILTER (combined): status = InProgress  AND  priority = High");
-manager.filterByStatusAndPriority(TaskStatus.InProgress, TaskPriority.High).forEach(printTask);
+hr('TYPED QUERY — getEventsByType("task")');
+const tasks = manager.getEventsByType('task');
+console.table(tasks.map(formatEvent));
 
-// ─── Demo: Error handling ─────────────────────────────────────────────────────
+// TypeScript knows these are TaskEvent — safe to access .dueDate directly:
+console.log('Due dates:');
+tasks.forEach((t) => console.log(`  [${t.id}] ${t.title} → ${t.dueDate.toDateString()}`));
 
-section("ERROR HANDLING: getById(999) → TaskNotFoundError");
+// ─── 4. TYPE GUARDS ───────────────────────────────────────────────────────────
+
+hr('TYPE GUARDS demo');
+const all = manager.getAll();
+all.forEach((event) => {
+  if (isMeetingEvent(event)) {
+    console.log(`[meeting #${event.id}] "${event.title}" @ ${event.location} — ${event.participants.length} participant(s)`);
+  } else if (isTaskEvent(event)) {
+    console.log(`[task    #${event.id}] "${event.title}" — tags: ${event.tags.join(', ')}`);
+  } else if (isReminderEvent(event)) {
+    console.log(`[remind  #${event.id}] "${event.message}" — notify ${event.notifyBefore} min before`);
+  }
+});
+
+// ─── 5. UPDATE ────────────────────────────────────────────────────────────────
+
+hr('UPDATE — mark task #4 completed & add a tag');
+const updated = manager.update<import('./models/models.js').TaskEvent>(4, {
+  completed: true,
+  tags: ['bug', 'auth', 'critical', 'resolved'],
+});
+console.log('Updated event:');
+console.table([formatEvent(updated)]);
+
+// ─── 6. UPDATE — verify type cannot change ────────────────────────────────────
+
+hr('UPDATE — attempt to change type (runtime strip, type error at compile time)');
+// The UpdateEventDto type does NOT include 'type', so passing it is a compile
+// error.  We demonstrate the runtime guard by casting to unknown first.
+const maliciousPatch = { type: 'reminder' } as unknown as import('./models/models.js').UpdateEventDto<import('./models/models.js').TaskEvent>;
+const safeResult = manager.update<import('./models/models.js').TaskEvent>(4, maliciousPatch);
+console.log(`Event #4 type after patch attempt: "${safeResult.type}" (unchanged — still 'task')`);
+
+// ─── 7. GROUPING ─────────────────────────────────────────────────────────────
+
+hr('GROUP BY TYPE');
+const groups = manager.groupByType();
+(['meeting', 'task', 'reminder'] as const).forEach((key) => {
+  console.log(`\n  ${key.toUpperCase()} (${groups[key].length}):`);
+  groups[key].forEach((e) => console.log(`    #${e.id}`, formatEvent(e)));
+});
+
+// ─── 8. FILTER ───────────────────────────────────────────────────────────────
+
+hr('FILTER — incomplete tasks');
+const incomplete = manager.filter(
+  (e): e is import('./models/models.js').TaskEvent => e.type === 'task' && !(e as import('./models/models.js').TaskEvent).completed,
+);
+console.table(incomplete.map(formatEvent));
+
+// ─── 9. DELETE ────────────────────────────────────────────────────────────────
+
+hr('DELETE — remove event #2');
+manager.delete(2);
+console.log(`Events after delete: ${manager.count}`);
+
+// ─── 10. TaskNotFoundError ────────────────────────────────────────────────────
+
+hr('ERROR HANDLING — TaskNotFoundError');
+
+// Trigger on a deleted id
 try {
-  manager.getById(999);
-} catch (err) {
+  manager.getById(2);
+} catch (err: unknown) {
   if (err instanceof TaskNotFoundError) {
-    console.log(`  Caught ${err.name}: ${err.message}`);
+    console.error(`Caught TaskNotFoundError: ${err.message} (eventId=${err.eventId})`);
+  } else {
+    throw err;
   }
 }
 
-section("ERROR HANDLING: delete(999) → TaskNotFoundError");
+// Trigger on a completely non-existent id
 try {
   manager.delete(999);
-} catch (err) {
+} catch (err: unknown) {
   if (err instanceof TaskNotFoundError) {
-    console.log(`  Caught ${err.name}: ${err.message}`);
+    console.error(`Caught TaskNotFoundError: ${err.message} (eventId=${err.eventId})`);
+  } else {
+    throw err;
   }
 }
 
-console.log(`\n${DIVIDER}`);
-console.log("  Done.");
-console.log(DIVIDER + "\n");
+// Trigger on update
+try {
+  manager.update(999, { title: 'Ghost' } as import('./models/models.js').UpdateEventDto<import('./models/models.js').MeetingEvent>);
+} catch (err: unknown) {
+  if (err instanceof TaskNotFoundError) {
+    console.error(`Caught TaskNotFoundError: ${err.message} (eventId=${err.eventId})`);
+  } else {
+    throw err;
+  }
+}
+
+// ─── 11. FINAL STATE ─────────────────────────────────────────────────────────
+
+hr('FINAL STATE — all remaining events');
+console.table(manager.getAll().map(formatEvent));
+console.log(`\nTotal: ${manager.count} events`);
