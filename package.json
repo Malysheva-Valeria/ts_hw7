@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsc && node dist/index.js"
+    "demo": "tsc && node dist/demo.js",
+    "start": "node dist/demo.js",
+    "dev": "tsc && node dist/demo.js"
   },
   "devDependencies": {
     "typescript": "^5.4.5"
